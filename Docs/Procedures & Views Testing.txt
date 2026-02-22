@@ -1,0 +1,352 @@
+This file for testing core Functions + Procedures + Views
+============================================================
+1) Function: fn_CalcAutoGrade
+============================================================
+Test Query:
+-- Requires: one exam with at least one MCQ/TF question added
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+DECLARE @QID int = (SELECT TOP 1 QID FROM dbo.Exam_Question WHERE EID=@EID);
+DECLARE @Correct varchar(max) = (SELECT CorrectAns FROM dbo.Question WHERE QID=@QID);
+
+SELECT dbo.fn_CalcAutoGrade(@EID, @QID, @Correct) AS Grade;
+
+Expected Result:
+- Returns QDegree for MCQ/TF if @Correct is the correct answer
+- Returns NULL if question type is TEXT
+
+Comment:
+Auto grading is only for MCQ/TF. TEXT remains manual.
+
+============================================================
+2) Function: fn_ExamTotalDegree
+============================================================
+Test Query:
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+SELECT dbo.fn_ExamTotalDegree(@EID) AS TotalDegreeFromFunction;
+
+Expected Result:
+- Returns 0 if no questions are assigned
+- Otherwise returns SUM(QDegree) from Exam_Question
+
+Comment:
+Used to enforce Course.MaxDegree and sync Exam.TotalDegree.
+
+============================================================
+3) Procedure: usp_Question_Add (Question Pool)
+============================================================
+Test Query:
+DECLARE @CID int = (SELECT TOP 1 CID FROM dbo.Course ORDER BY CID);
+DECLARE @NewQID int;
+
+-- MCQ example
+EXEC dbo.usp_Question_Add
+  @CID=@CID,
+  @type='MCQ',
+  @QuestionText=N'Test MCQ: Which one is correct?',
+  @CorrectAnswer='A',
+  @Choice1='A',
+  @Choice2='B',
+  @Choice3='C',
+  @Choice4='D',
+  @NewQID=@NewQID OUTPUT;
+
+SELECT @NewQID AS NewQID;
+SELECT * FROM dbo.Question WHERE QID=@NewQID;
+
+Expected Result:
+- NewQID is returned
+- Question row inserted in Question table
+
+Comment:
+Creates question in the course question pool with validation.
+
+============================================================
+4) Procedure: usp_Question_Update
+============================================================
+Test Query:
+DECLARE @QID int = (SELECT TOP 1 QID FROM dbo.Question ORDER BY QID );
+DECLARE @CID int = (SELECT CID FROM dbo.Question WHERE QID=@QID);
+
+EXEC dbo.usp_Question_Update
+  @QID=@QID,
+  @CID=@CID,
+  @type='TF',
+  @QuestionText='Test TF: SQL Server is a relational DBMS?',
+  @CorrectAnswer='T',
+  @Choice1=NULL,@Choice2=NULL,@Choice3=NULL,@Choice4=NULL;
+
+SELECT * FROM dbo.Question WHERE QID=@QID;
+
+Expected Result:
+- Existing question updated to TF type
+- Choices cleared, CorrectAns = 'T'
+
+Comment:
+Edits question in pool with type-specific validation.
+
+============================================================
+5) Procedure: usp_Exam_Create
+============================================================
+Test Query:
+DECLARE @CID int = (SELECT TOP 1 CID FROM dbo.Course ORDER BY CID);
+DECLARE @IID int = (SELECT TOP 1 IID FROM dbo.Instructor ORDER BY IID);
+DECLARE @IntakeID int = (SELECT TOP 1 IntakeID FROM dbo.Intake ORDER BY IntakeID);
+
+DECLARE @NewEID int;
+
+EXEC dbo.usp_Exam_Create
+  @CID=@CID, @IID=@IID, @intakeID=@IntakeID,
+  @ExamDate='2026-2-25',
+  @STime='10:00', @ETime='11:00',
+  @type='Quiz',
+  @TID=NULL, @BID=NULL,
+  @allowoptions=NULL,
+  @NewEID=@NewEID OUTPUT;
+
+SELECT @NewEID AS NewEID;
+SELECT * FROM dbo.Exam WHERE EID=@NewEID;
+
+Expected Result:
+- Exam row inserted
+- NewEID returned
+- TotalDegree starts with 0
+
+Comment:
+Creates a new exam validated against Instructor_Course assignment.
+
+============================================================
+6) Procedure: usp_Exam_Add_Question_Manual
+============================================================
+Test Query:
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+DECLARE @CID int = (SELECT CID FROM dbo.Exam WHERE EID=@EID);
+DECLARE @QID int = (SELECT TOP 1 QID FROM dbo.Question WHERE CID=@CID ORDER BY QID );
+
+EXEC dbo.usp_Exam_Add_Question_Manual @EID=@EID, @QID=@QID, @QDegree=5;
+
+SELECT * FROM dbo.Exam_Question WHERE EID=@EID AND QID=@QID;
+SELECT TotalDegree FROM dbo.Exam WHERE EID=@EID;
+
+Expected Result:
+- Row exists in Exam_Question with QDegree=5
+- Exam.TotalDegree updated accordingly
+
+Comment:
+Adds/updates a question in an exam and maintains total degree.
+
+============================================================
+7) Procedure: usp_Exam_GenerateQuestions_Random
+============================================================
+Test Query:
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+
+EXEC dbo.usp_Exam_GenerateQuestions_Random
+  @EID=@EID,
+  @MCQ_Count=1,
+  @TF_Count=1,
+  @Text_Count=0,
+  @DefaultQDegree=2;
+
+SELECT * FROM dbo.Exam_Question WHERE EID=@EID;
+SELECT TotalDegree FROM dbo.Exam WHERE EID=@EID;
+
+Expected Result:
+- New random questions added (if available)
+- TotalDegree increases by added questions count * DefaultQDegree
+
+Comment:
+Random question generator from the course pool by type.
+
+============================================================
+8) Procedure: usp_RecalcTotalDegree
+============================================================
+Test Query:
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+
+EXEC dbo.usp_RecalcTotalDegree @EID=@EID;
+SELECT TotalDegree, dbo.fn_ExamTotalDegree(@EID) AS SumFromFn
+FROM dbo.Exam WHERE EID=@EID;
+
+Expected Result:
+- Exam.TotalDegree equals fn_ExamTotalDegree(@EID)
+
+Comment:
+Forces synchronization between stored total and real sum of degrees.
+
+============================================================
+9) Assign student to exam
+============================================================
+EXEC dbo.usp_Exam_AssignStudent
+     @EID = 1,
+     @SID = 1;
+
+Expected Result:
+1 row inserted into student_exam with ExamGrade = NULL.
+
+Comment:
+Student is now allowed to take the exam.
+============================================================
+10) Procedure: usp_Student_SubmitAnswer
+============================================================
+Test Query:
+DECLARE @SID int = (SELECT TOP 1 SID FROM dbo.Student ORDER BY SID);
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+DECLARE @QID int = (SELECT TOP 1 QID FROM dbo.Exam_Question WHERE EID=@EID);
+DECLARE @Ans varchar(max) = (SELECT CorrectAns FROM dbo.Question WHERE QID=@QID);
+
+EXEC dbo.usp_Student_SubmitAnswer
+  @EID=@EID, @SID=@SID, @QID=@QID, @StudentAnswer=@Ans;
+
+SELECT * FROM dbo.Answer WHERE SID=@SID AND EID=@EID AND QID=@QID;
+
+Expected Result:
+- Answer row inserted/updated
+- For MCQ/TF, QGrade calculated automatically
+
+Comment:
+Stores/upserts a student answer and auto grades when applicable.
+
+============================================================
+11) Procedure: usp_Auto_Grade_Exam
+============================================================
+Test Query:
+DECLARE @SID int = (SELECT TOP 1 SID FROM dbo.Student ORDER BY SID);
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+
+EXEC dbo.usp_Auto_Grade_Exam @SID=@SID, @EID=@EID;
+
+SELECT a.*, q.Type
+FROM dbo.Answer a
+JOIN dbo.Question q ON q.QID=a.QID
+WHERE a.SID=@SID AND a.EID=@EID;
+
+Expected Result:
+- MCQ/TF answers have QGrade set (0 or full degree)
+- TEXT answers remain NULL
+
+Comment:
+Re-grades all objective questions for a student in an exam.
+
+============================================================
+12) Procedure: usp_RecalcStudentExamSnapshot
+============================================================
+Test Query:
+DECLARE @SID int = (SELECT TOP 1 SID FROM dbo.Student ORDER BY SID);
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+
+EXEC dbo.usp_RecalcStudentExamSnapshot @SID=@SID, @EID=@EID;
+
+SELECT * FROM dbo.student_exam WHERE SID=@SID AND EID=@EID;
+
+Expected Result:
+- student_exam row exists
+- ExamGrade equals SUM of Answer.QGrade for that student/exam
+
+Comment:
+Builds/updates the final student exam grade snapshot.
+
+============================================================
+13) Procedure: usp_Student_SubmitExam
+============================================================
+Test Query:
+DECLARE @SID int = (SELECT TOP 1 SID FROM dbo.Student ORDER BY SID);
+DECLARE @EID int = (SELECT TOP 1 EID FROM dbo.Exam ORDER BY EID );
+
+EXEC dbo.usp_Student_SubmitExam @SID=@SID, @EID=@EID, @RequireAllAnswers=0;
+
+SELECT * FROM dbo.student_exam WHERE SID=@SID AND EID=@EID;
+
+Expected Result:
+- Auto grading executed
+- Snapshot updated in student_exam
+
+Comment:
+Finalizes exam submission and calculates final grade.
+
+============================================================
+TEST: Recalculate Student Course Grade (Latest Exam Logic)
+============================================================
+SELECT e.EID, e.ExamDate, e.STime, se.ExamGrade
+FROM dbo.student_exam se
+JOIN dbo.Exam e ON e.EID = se.EID
+WHERE se.SID = 1 AND e.CID = 1
+ORDER BY e.ExamDate DESC, e.STime DESC;
+
+EXEC dbo.usp_RecalcStudentCourseGrade_LatestExam
+     @SID = 1,
+     @CID = 1;
+
+SELECT *
+FROM dbo.Student_Course
+WHERE SID = 1 AND CID = 1;
+
+Expected Result:
+Student_Course.Grade
+= ExamGrade of latest exam
+(based on ExamDate DESC, STime DESC)
+============================================================
+TEST: Recalculate Course Grade (Latest Exam)
+============================================================
+
+EXEC dbo.usp_RecalcStudentCourseGrade_LatestExam
+     @SID = 1,
+     @CID = 1;
+
+Expected Result:
+Student_Course table updated with grade equal to
+the latest exam grade for this student in this course
+(based on ExamDate DESC, STime DESC).
+
+Comment:
+Confirms that:
+Latest exam is selected correctly.
+Student_Course is updated or inserted.
+Final course result is calculated properly.
+============================================================
+14) Views
+============================================================
+
+14.1) vw_Exam_Header
+Test Query:
+SELECT TOP 20 * FROM dbo.vw_Exam_Header ORDER BY EID ;
+
+Expected Result:
+- Returns exam header details
+
+14.2) vw_ExamQuestions
+Test Query:
+SELECT TOP 50 * FROM dbo.vw_ExamQuestions ORDER BY EID , QID;
+
+Expected Result:
+- Returns exam questions with content and degrees
+
+14.3) vw_StudentExamAnswer
+Test Query:
+SELECT TOP 50 * FROM dbo.vw_StudentExamAnswer ORDER BY EID , SID, QID;
+
+Expected Result:
+- Returns student answers + grades + auto calc grade
+
+14.4) vw_StudentExamResult
+Test Query:
+SELECT TOP 50 * FROM dbo.vw_StudentExamResult ORDER BY SID;
+
+Expected Result:
+- Returns final exam results (snapshot)
+
+14.5) vw_StudentCourseFinalResult
+Test Query:
+SELECT TOP 50 * FROM dbo.vw_StudentCourseFinalResult ORDER BY CID, SID;
+
+Expected Result:
+- Returns course final grades from Student_Course
+
+14.6) View Question Pool
+SELECT * FROM dbo.vw_QuestionPool
+WHERE CID = 1;
+
+Expected Result:
+
+Returns all questions belonging to Course ID = 1
+Shows question type, text, choices, and correct answer
+

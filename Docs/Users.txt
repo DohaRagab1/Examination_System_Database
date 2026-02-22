@@ -1,0 +1,26 @@
+This text file contains all accounts for the database and passwords.
+
+**Admin**
+Username = AdminLogin
+Password = admin123
+
+**Training Manager**
+Username = TrainingMgrLogin
+Password = mgr123
+
+**Instructor**
+Username = Instructor1Login
+Password = inst123
+
+Username = Instructor2Login
+Password = inst23
+
+**Student**
+Username = Student1Login
+Password = stud123
+
+Username = Student2Login
+Password = stud23
+
+Username = Student3Login
+Password = stud3

@@ -1,0 +1,16 @@
+cid,cnAME,MaxDegree,MinDegree,Description
+,HTML/CSS,100,50,Web Design Basics
+,JavaScript,100,50,Frontend Development
+,Java Core,100,50,Object Oriented Programming
+,Spring Boot,100,50,Backend Development
+,React,100,50,Frontend Framework
+,Node.js,100,50,Backend Framework
+,MERN Project,100,50,Full Stack Project
+,SQL,100,50,Database Fundamentals
+,Python,100,50,Data Programming
+,Data Warehousing,100,50,Data Storage & ETL
+,ETL,100,50,Extract Transform Load
+,Power BI Dashboard,100,50,Data Visualization
+,Network Security,100,50,Networking & Security
+,Ethical Hacking,100,50,Hacking Techniques
+,Cybersecurity Basics,100,50,Cybersecurity Fundamentals

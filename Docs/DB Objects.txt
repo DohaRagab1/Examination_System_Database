@@ -1,0 +1,282 @@
+This file contains name and brief description for all objects in our Database.
+============================================================
+A) Functions
+============================================================
+
+1) dbo.fn_CalcAutoGrade(@EID, @QID, @StudentAnswer) RETURNS INT
+- Calculates auto grade for MCQ/TF by comparing student answer with Question.CorrectAns.
+- Returns NULL for TEXT questions to be graded manually later.
+- Used by: usp_Student_SubmitAnswer, usp_Auto_Grade_Exam, vw_StudentExamAnswer.
+
+2) dbo.fn_ExamTotalDegree(@EID) RETURNS INT
+- Returns the sum of Exam_Question.QDegree for a given exam.
+- Used by: usp_Exam_Question_Manual, usp_Exam_GenerateQuestions_Random, usp_RecalcTotalDegree.
+
+3) normalizeText
+- A function takes a string and returns it after cleaning
+- Used to handle the text questions.
+- It turns the string to lower case and removes the extra spaces and extra signs within the answer.
+
+4) Text_Similarity
+- A function takes the correct answer and the student answer to compare between them.
+- Returns an evaluated percentage for the correctness for this answer.
+- It evaluates the answer based on the similarity, length, and phonetic similarity.
+
+5) ReviewTextQuestions
+- A function used by the instructors to review the text questions
+- Displays text questions without assigned degree yet, and their information and the evaluation percentage from the function Similarity.
+- Takes the examID as a parameters to show questions in this exam only.
+
+============================================================
+B) Stored Procedures
+============================================================
+
+1) dbo.usp_Exam_Create
+- Creates a new exam for a course by an instructor (validated using Instructor_Course).
+- Stores exam date/time window and initializes TotalDegree = 0.
+- Returns the newly created EID via output parameter.
+
+2) dbo.usp_Exam_Add_Question_Manual
+- Adds a question to an exam manually OR updates its degree if it already exists.
+- Validates question belongs to the same course as the exam.
+- Enforces Course.MaxDegree by checking the new total degrees.
+- Recalculates Exam.TotalDegree after change.
+
+3) dbo.usp_Exam_GenerateQuestions_Random
+- Randomly selects questions from the course question pool by type (MCQ/TF/TEXT).
+- Inserts selected questions into Exam_Question with DefaultQDegree.
+- Enforces Course.MaxDegree and ensures enough questions exist.
+- Recalculates Exam.TotalDegree after insertion.
+
+4) dbo.usp_RecalcTotalDegree
+- Recalculates and syncs Exam.TotalDegree from Exam_Question using fn_ExamTotalDegree.
+
+5) dbo.usp_Exam_AssignStudent
+Purpose:
+Allows instructor to assign a specific student to a specific exam.
+
+Logic:
+- Validates Exam existence.
+- Validates Student existence.
+- Prevents duplicate assignment.
+- Inserts record into student_exam with ExamGrade = NULL.
+
+6) dbo.usp_Student_SubmitAnswer
+- Upserts a single student answer into Answer (SID,EID,QID).
+- If student not assigned → THROW.
+- If exam not in allowed time window → THROW.
+- Auto grades MCQ/TF immediately using fn_CalcAutoGrade.
+- TEXT answers keep QGrade NULL until instructor review.
+
+7) dbo.usp_Auto_Grade_Exam
+- Auto grades all MCQ/TF answers for a student in a given exam.
+- TEXT answers remain NULL.
+
+8) dbo.usp_RecalcStudentExamSnapshot
+- Computes total exam grade for a student as SUM(Answer.QGrade).
+- Upserts the result into student_exam (SID,EID,ExamGrade).
+
+9) dbo.usp_Student_SubmitExam
+- Finalizes submission:
+  - Optional validation that all questions are answered.
+  - Executes usp_Auto_Grade_Exam then usp_RecalcStudentExamSnapshot.
+
+10) dbo.usp_Question_Add
+- Adds a new question to the question pool for a specific course.
+- Validates:
+  - MCQ requires 4 choices and correct answer matches one choice.
+  - TF correct answer must be 'T' or 'F'.
+  - TEXT stores empty CorrectAns (current schema uses NOT NULL).
+
+11) dbo.usp_Question_Update
+- Updates an existing question in the question pool.
+- Applies the same validation rules as usp_Question_Add.
+
+12) dbo.usp_RecalcStudentCourseGrade_LatestExam
+Purpose:
+Calculates and updates the final course grade for a specific
+student based on the latest exam attempt in that course.
+
+Logic:
+- Selects the latest exam using:
+    ExamDate DESC, STime DESC
+- Retrieves its ExamGrade.
+- Updates or inserts into Student_Course table.
+- If no exam exists → stores 0.
+
+13) dbo.usp_RecalcCourseGrades_LatestExam
+Purpose:
+Recalculates final grades for all students in a specific course.
+
+Logic:
+- For each student who has exams in the course:
+    • Finds latest exam.
+    • Uses its ExamGrade.
+- Updates existing Student_Course rows.
+- Inserts missing rows.
+
+14) InsAssignTextGrades
+- A stored procedure for instructors to assign grades to the text questions.
+- It takes the question id and the assigned grade to update the answer table.
+- It accepts only grades less than or equal the question total degree.
+
+15) addBranch
+- For the training manager role to add branches
+- Takes the branch name
+
+16) editBranch
+- For the training manager role to edit branches
+- Takes the branch id and name and updates the branch table
+- Checks first if this branch id exist
+
+17) addIntake
+- For the training manager role to add intakes
+- Takes the intake name
+
+18) editIntake
+- For the training manager role to edit intakes
+- Takes the intake id and name and updates the intake table
+- Checks first if this intake id exist
+
+19) addTrack
+- For the training manager role to add tracks
+- Takes the track name and department id of this track
+- Checks first if this department id exist
+
+20) editTrack
+- For the training manager role to edit tracks
+- Takes the track id , track name and departmentID and updates the track table
+- Checks first if these department id and track exist
+
+21) add_student
+- For the training manager role to add students
+- Takes the student info and add it to the student table
+- Takes the student name, address, age, email, phone, intakeID, trackID, and branchID
+- Checks first if this  intakeID, trackID, and branchID exist.
+
+============================================================
+C) Views
+============================================================
+
+1) dbo.vw_Exam_Header
+- Displays exam header details joined with Instructor, Intake, Branch, Track (and can include Course name).
+- Used for UI listing and reporting.
+
+2) dbo.vw_ExamQuestions
+- Displays all questions in an exam with their degrees and question content/choices.
+
+3) dbo.vw_StudentExamAnswer
+- Displays student answers with question details, max degree, stored grade, and calculated auto grade.
+
+4) dbo.vw_StudentExamResult
+- Displays final student exam results from student_exam joined with exam/course/instructor details.
+
+5) dbo.vw_StudentCourseFinalResult
+- Displays student final course grade from Student_Course joined with student and course details.
+
+6) Object: dbo.vw_QuestionPool
+
+Purpose:
+Provides a centralized question pool for instructors.
+Displays all questions grouped by course including:
+- Question type (MCQ / TF / TEXT)
+- Question text
+- Choices (if applicable)
+- Correct answer
+- Course name
+
+Used by instructors to manually select questions when creating exams.
+
+7) vw_allStudents
+- A view to list all students to the training manager
+
+8) vw_allCourses
+- A view to list all Courses to the training manager
+
+9) vw_allInstructors
+- A view to list all Instructors to the training manager
+
+10) vw_allQuestions
+- A view to list all Questions to the training manager
+
+11) vw_allExams
+- A view to list all Exams to the training manager
+
+
+============================================================
+Triggers
+============================================================
+1) t1_ensureAllExamsDegreeInRange
+- A trigger to ensure exams all degreees between course MinDegree & MaxDegree
+- Between exam & course tables
+- Handled also if instructor can delete exams and can handle multi rows
+
+2) t2_checkExamCreation
+- A trigger to ensure instructor can make exams for his courses only
+- between exam & instructor_course tables
+
+3) t3_checkAnswerTime
+- A trigger to ensure students answer exam in the allowed time only
+- Between answer & exam tables
+
+4) t4_checkExamEndTime
+- A trigger to ensure exam end time > start time
+- On the exam table only
+- Found already done as check constraint, never fired
+
+5) t5_checkExamQuestionSign
+- A trigger to ensure degree of question in each exam is positive
+- On the Exam_Question table
+
+============================================================
+Indexes
+============================================================
+
+- All tables have by default clustered indexes on their primary keys.
+- For high performance, we made non clustered indices on the columns much quered or joined
+
+1) in1_exam_course
+- A nonclustered index on courseID in exam table
+
+2) in2_exam_instructor
+- A nonclustered index on instructorID in exam table
+
+3) in3_question_course
+- A nonclustered index on courseID in question table
+
+4) in4_student_branch
+- A nonclustered index on branchID in student table
+
+5) in5_student_track
+- A nonclustered index on trackID in student table
+
+6) in6_student_intake
+- A nonclustered index on intakeID in student table
+
+============================================================
+Security Objects
+============================================================
+
+Logins
+- AdminLogin
+- TrainingMgrLogin
+- Instructor1Login
+- Instructor2Login
+- Student1Login
+- Student2Login
+- Student3Login
+
+Database Users
+- Admin1
+- TrainingMgr1
+- Instructor1
+- Instructor2
+- Student1
+- Student2
+- Student3
+
+Roles
+- AdminRole
+- TrainingMgrRole
+- InstructorRole
+- StudentRole
